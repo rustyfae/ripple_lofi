@@ -538,6 +538,13 @@ async def before_presence_rotator():
 #  EVENTS
 # ─────────────────────────────────────────
 @bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        await ctx.message.delete()
+        await ctx.send("❌ Ripple commands only work in the Silent Study Room chat!", delete_after=5)
+
+
+@bot.event
 async def on_ready():
     print(f"[Ripple] Logged in as {bot.user} ({bot.user.id})")
     activity = discord.Activity(type=discord.ActivityType.listening, name="lofi beats")
