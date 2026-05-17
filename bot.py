@@ -8,6 +8,7 @@ from discord.ext import commands, tasks
 import asyncio
 import yt_dlp
 import datetime
+import time
 import os
 from dotenv import load_dotenv
 
@@ -41,46 +42,46 @@ LOFI_STREAMS = [
         "thumbnail": "https://i.ytimg.com/vi/7NOSDKb0HlU/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=Dx5qFachd3A",
-    "title": "vocal lofi hip hop radio",
-    "artist": "College Music",
-    "thumbnail": "https://i.ytimg.com/vi/Dx5qFachd3A/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=Dx5qFachd3A",
+        "title": "vocal lofi hip hop radio",
+        "artist": "College Music",
+        "thumbnail": "https://i.ytimg.com/vi/Dx5qFachd3A/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=28KRPhVzCus",
-    "title": "lofi hip hop radio 💤 beats to sleep/chill to",
-    "artist": "Lofi Girl",
-    "thumbnail": "https://i.ytimg.com/vi/28KRPhVzCus/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=28KRPhVzCus",
+        "title": "lofi hip hop radio 💤 beats to sleep/chill to",
+        "artist": "Lofi Girl",
+        "thumbnail": "https://i.ytimg.com/vi/28KRPhVzCus/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=TxOfaEwLhD4",
-    "title": "Snowy Night ❄️ 24/7 Winter Lofi Beats to Relax & Study ❄️ Winter Café Radio to Feel Good",
-    "artist": "Lofi on the Rooftop",
-    "thumbnail": "https://i.ytimg.com/vi/TxOfaEwLhD4/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=TxOfaEwLhD4",
+        "title": "Snowy Night ❄️ 24/7 Winter Lofi Beats to Relax & Study ❄️ Winter Café Radio to Feel Good",
+        "artist": "Lofi on the Rooftop",
+        "thumbnail": "https://i.ytimg.com/vi/TxOfaEwLhD4/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=blAFxjhg62k",
-    "title": "Coffee Shop Radio - 24/7 Chill Lo-Fi & Jazzy Beats",
-    "artist": "STEEZYASF##K",
-    "thumbnail": "https://i.ytimg.com/vi/blAFxjhg62k/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=blAFxjhg62k",
+        "title": "Coffee Shop Radio - 24/7 Chill Lo-Fi & Jazzy Beats",
+        "artist": "STEEZYASF##K",
+        "thumbnail": "https://i.ytimg.com/vi/blAFxjhg62k/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=Lcdi9O2XB4E",
-    "title": "tokyo night drive - lofi hiphop + chill + beats to sleep/relax/study to ✨",
-    "artist": "TOKYO TONES",
-    "thumbnail": "https://i.ytimg.com/vi/Lcdi9O2XB4E/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=Lcdi9O2XB4E",
+        "title": "tokyo night drive - lofi hiphop + chill + beats to sleep/relax/study to ✨",
+        "artist": "TOKYO TONES",
+        "thumbnail": "https://i.ytimg.com/vi/Lcdi9O2XB4E/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=vYIYIVmOo3Q",
-    "title": "Calming Lofi Rain 🌧️ Chill Beats for Focus, Study & Sleep",
-    "artist": "Lofi Tone Art",
-    "thumbnail": "https://i.ytimg.com/vi/vYIYIVmOo3Q/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=vYIYIVmOo3Q",
+        "title": "Calming Lofi Rain 🌧️ Chill Beats for Focus, Study & Sleep",
+        "artist": "Lofi Tone Art",
+        "thumbnail": "https://i.ytimg.com/vi/vYIYIVmOo3Q/maxresdefault.jpg",
     },
     {
-    "url": "https://www.youtube.com/watch?v=TfmECBzmOn4",
-    "title": "Lofi Hip Hop Radio 🍉 Relaxing Beats to Study, Sleep, Chill to 24/7",
-    "artist": "Lofi Fruits",
-    "thumbnail": "https://i.ytimg.com/vi/TfmECBzmOn4/maxresdefault.jpg",
+        "url": "https://www.youtube.com/watch?v=TfmECBzmOn4",
+        "title": "Lofi Hip Hop Radio 🍉 Relaxing Beats to Study, Sleep, Chill to 24/7",
+        "artist": "Lofi Fruits",
+        "thumbnail": "https://i.ytimg.com/vi/TfmECBzmOn4/maxresdefault.jpg",
     },
 ]
 
@@ -93,7 +94,8 @@ STREAMING_PRESENCES = [
     (discord.ActivityType.playing, "chill vibes 24/7"),
 ]
 
-STOPPED_PRESENCE = (discord.ActivityType.playing, "radio silence...")   
+STOPPED_PRESENCE = (discord.ActivityType.playing, "radio silence...")
+
 
 # ─────────────────────────────────────────
 #  YTDL + FFMPEG OPTIONS
@@ -105,7 +107,7 @@ YTDL_OPTIONS = {
     "no_warnings": True,
     "default_search": "auto",
     "source_address": "0.0.0.0",
-    "cookiesfrombrowser": ("firefox",),  # change to "firefox" or "edge" if needed
+    "cookiesfrombrowser": ("firefox",),
 }
 
 FFMPEG_OPTIONS = {
@@ -128,6 +130,26 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!wave ", intents=intents, help_command=None)
 
 # ─────────────────────────────────────────
+#  SILENCE DETECTOR — the silent death fix 🔧
+# ─────────────────────────────────────────
+class SilenceDetector(discord.PCMVolumeTransformer):
+    """
+    Wraps the audio source and tracks the last time
+    audio bytes actually flowed. If nothing moves for
+    silent_threshold seconds, the watchdog will catch it.
+    """
+    def __init__(self, source, volume=0.5):
+        super().__init__(source, volume=volume)
+        self.last_read = time.time()
+        self.silent_threshold = 30  # seconds — bump to 45/60 if false positives
+
+    def read(self):
+        data = super().read()
+        if data:
+            self.last_read = time.time()
+        return data
+
+# ─────────────────────────────────────────
 #  STATE
 # ─────────────────────────────────────────
 class BotState:
@@ -141,6 +163,7 @@ class BotState:
         self.MAX_RETRIES = 5
         self.stopped = False
         self.stop_task: asyncio.Task | None = None
+        self.audio_source: SilenceDetector | None = None  # 🔧 track audio source
 
 state = BotState()
 
@@ -210,7 +233,6 @@ async def update_now_playing_embed():
             return
         except discord.NotFound:
             state.now_playing_message = None
-    # Send fresh message (e.g. on stream change)
     if state.now_playing_message:
         try:
             await state.now_playing_message.delete()
@@ -267,8 +289,10 @@ async def start_stream(stream_index: int | None = None, new_message: bool = Fals
     if state.voice_client.is_playing():
         state.voice_client.stop()
 
-    source = discord.FFmpegPCMAudio(state.stream_url, **FFMPEG_OPTIONS)
-    source = discord.PCMVolumeTransformer(source, volume=0.5)
+    # 🔧 use SilenceDetector instead of plain PCMVolumeTransformer
+    raw_source = discord.FFmpegPCMAudio(state.stream_url, **FFMPEG_OPTIONS)
+    source = SilenceDetector(raw_source, volume=0.5)
+    state.audio_source = source  # 🔧 save reference for watchdog
 
     state.start_time = datetime.datetime.utcnow()
     state.retries = 0
@@ -321,6 +345,14 @@ async def watchdog():
     if state.stopped:
         await update_now_playing_embed()
         return
+
+    # 🔧 silent death check — is audio actually flowing?
+    if state.audio_source and state.voice_client and state.voice_client.is_playing():
+        silent_for = time.time() - state.audio_source.last_read
+        if silent_for > state.audio_source.silent_threshold:
+            print(f"[Ripple] 💀 Silent death detected ({silent_for:.0f}s no audio) — restarting...")
+            await start_stream()
+            return
 
     if state.start_time:
         elapsed = datetime.datetime.utcnow() - state.start_time
@@ -379,8 +411,8 @@ class StopModal(discord.ui.Modal, title="⏸️ Stop Ripple"):
             )
             return
 
-        # Stop the bot
         state.stopped = True
+        state.audio_source = None  # 🔧 clear audio source on stop
         await bot.change_presence(status=discord.Status.idle, activity=discord.Activity(type=STOPPED_PRESENCE[0], name=STOPPED_PRESENCE[1]))
         print(f"[Ripple] ⏸️ Stopped by {interaction.user.name} ({interaction.user.id}) for {minutes} minutes")
         if state.voice_client and state.voice_client.is_playing():
@@ -389,11 +421,9 @@ class StopModal(discord.ui.Modal, title="⏸️ Stop Ripple"):
             await state.voice_client.disconnect()
             state.voice_client = None
 
-        # Cancel any existing stop task
         if state.stop_task and not state.stop_task.done():
             state.stop_task.cancel()
 
-        # Schedule auto resume
         state.stop_task = asyncio.create_task(auto_resume(minutes))
 
         await update_now_playing_embed()
@@ -415,8 +445,6 @@ async def stop(ctx):
     if state.stopped:
         await ctx.send("⏸️ Ripple is already on a break! Use `!wave resume` to bring it back.", delete_after=8)
         return
-    modal = StopModal()
-    # Modals need an interaction — use a button to trigger it
     view = StopButtonView()
     await ctx.send(
         "⏸️ How long should Ripple take a break?",
@@ -441,13 +469,13 @@ async def resume(ctx):
         await ctx.send("▶️ Ripple is already playing!", delete_after=8)
         return
 
-    # Cancel the auto resume task
     if state.stop_task and not state.stop_task.done():
         state.stop_task.cancel()
 
     print(f"[Ripple] ▶️ Resumed by {ctx.author.name} ({ctx.author.id})")
     await ctx.send("🎵 Ripple is back! *The bot missed you* 🌊", delete_after=8)
     await start_stream(new_message=True)
+
 
 @bot.command(name="skip")
 @commands.has_permissions(manage_guild=True)
@@ -474,11 +502,18 @@ async def status(ctx):
     playing = "✅ Streaming" if (vc and vc.is_playing()) else ("⏸️ Stopped" if state.stopped else "❌ Not playing")
     connected = "✅ Connected" if (vc and vc.is_connected()) else "❌ Disconnected"
 
+    # 🔧 show silence detector info in status
+    silent_for = ""
+    if state.audio_source:
+        secs = int(time.time() - state.audio_source.last_read)
+        silent_for = f"{secs}s ago"
+
     embed = discord.Embed(title="🤖 Ripple Status", color=0x10b981)
     embed.add_field(name="Playback", value=playing, inline=True)
     embed.add_field(name="Voice", value=connected, inline=True)
     embed.add_field(name="Uptime", value=uptime if uptime else "N/A", inline=True)
     embed.add_field(name="Retries", value=str(state.retries), inline=True)
+    embed.add_field(name="Last Audio", value=silent_for if silent_for else "N/A", inline=True)
     embed.add_field(name="Current Stream", value=current_stream_info()["title"], inline=False)
     embed.set_footer(text="chill beats, big goals 🎧")
     await ctx.send(embed=embed)
@@ -513,6 +548,7 @@ async def help_command(ctx):
     embed.set_footer(text="chill beats, big goals 🎧")
     await ctx.send(embed=embed)
 
+
 presence_index = 0
 
 @tasks.loop(minutes=PRESENCE_ROTATION_MINUTES)
@@ -542,7 +578,6 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.message.delete()
         await ctx.send("❌ Ripple commands only work in the Silent Study Room chat!", delete_after=5)
-
 
 @bot.event
 async def on_ready():
