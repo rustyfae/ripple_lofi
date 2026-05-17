@@ -114,7 +114,7 @@ FFMPEG_OPTIONS = {
         "-reconnect_streamed 1 "
         "-reconnect_delay_max 5"
     ),
-    "options": "-vn -bufsize 512k",
+    "options": "-vn -bufsize 4096k",
 }
 
 # ─────────────────────────────────────────
