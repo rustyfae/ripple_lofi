@@ -27,6 +27,13 @@ _raw_ids = os.getenv("TEXT_CHANNEL_IDS", "")
 TEXT_CHANNEL_IDS: set[int] = {int(x.strip()) for x in _raw_ids.split(",") if x.strip()}
 
 LOFI_STREAMS = [
+    
+    {
+        "url": "https://www.youtube.com/watch?v=Dx5qFachd3A",
+        "title": "vocal lofi hip hop radio",
+        "artist": "College Music",
+        "thumbnail": "https://i.ytimg.com/vi/Dx5qFachd3A/maxresdefault.jpg",
+    },
     {
         "url": "https://www.youtube.com/watch?v=4xDzrJKXOOY",
         "title": "synthwave radio - beats to chill/game to",
@@ -38,12 +45,6 @@ LOFI_STREAMS = [
         "title": "chillhop radio",
         "artist": "Chillhop Music",
         "thumbnail": "https://i.ytimg.com/vi/7NOSDKb0HlU/maxresdefault.jpg",
-    },
-    {
-        "url": "https://www.youtube.com/watch?v=Dx5qFachd3A",
-        "title": "vocal lofi hip hop radio",
-        "artist": "College Music",
-        "thumbnail": "https://i.ytimg.com/vi/Dx5qFachd3A/maxresdefault.jpg",
     },
     {
         "url": "https://www.youtube.com/watch?v=28KRPhVzCus",
