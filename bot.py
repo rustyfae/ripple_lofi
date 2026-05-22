@@ -47,12 +47,6 @@ LOFI_STREAMS = [
         "thumbnail": "https://i.ytimg.com/vi/7NOSDKb0HlU/maxresdefault.jpg",
     },
     {
-        "url": "https://www.youtube.com/watch?v=28KRPhVzCus",
-        "title": "lofi hip hop radio 💤 beats to sleep/chill to",
-        "artist": "Lofi Girl",
-        "thumbnail": "https://i.ytimg.com/vi/28KRPhVzCus/maxresdefault.jpg",
-    },
-    {
         "url": "https://www.youtube.com/watch?v=TxOfaEwLhD4",
         "title": "Snowy Night ❄️ 24/7 Winter Lofi Beats to Relax & Study",
         "artist": "Lofi on the Rooftop",
