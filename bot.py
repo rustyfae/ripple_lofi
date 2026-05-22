@@ -28,12 +28,6 @@ TEXT_CHANNEL_IDS: set[int] = {int(x.strip()) for x in _raw_ids.split(",") if x.s
 
 LOFI_STREAMS = [
     {
-        "url": "https://www.youtube.com/watch?v=jfKfPfyJRdk",
-        "title": "lofi hip hop radio - beats to relax/study to",
-        "artist": "Lofi Girl",
-        "thumbnail": "https://i.ytimg.com/vi/jfKfPfyJRdk/maxresdefault.jpg",
-    },
-    {
         "url": "https://www.youtube.com/watch?v=4xDzrJKXOOY",
         "title": "synthwave radio - beats to chill/game to",
         "artist": "Lofi Girl",
