@@ -17,10 +17,14 @@ load_dotenv()
 # ─────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────
-BOT_TOKEN             = os.getenv("BOT_TOKEN")
-VOICE_CHANNEL_ID      = int(os.getenv("VOICE_CHANNEL_ID"))
-TEXT_CHANNEL_ID       = int(os.getenv("TEXT_CHANNEL_ID"))
+BOT_TOKEN              = os.getenv("BOT_TOKEN")
+VOICE_CHANNEL_ID       = int(os.getenv("VOICE_CHANNEL_ID"))
 NOW_PLAYING_CHANNEL_ID = int(os.getenv("NOW_PLAYING_CHANNEL_ID"))
+
+# Multiple command channels — comma separated in .env
+# e.g. TEXT_CHANNEL_IDS=123456789,987654321,111222333
+_raw_ids = os.getenv("TEXT_CHANNEL_IDS", "")
+TEXT_CHANNEL_IDS: set[int] = {int(x.strip()) for x in _raw_ids.split(",") if x.strip()}
 
 LOFI_STREAMS = [
     {
@@ -85,13 +89,13 @@ LOFI_STREAMS = [
     },
 ]
 
-STREAM_ROTATION_HOURS = 1
+STREAM_ROTATION_HOURS    = 1
 PRESENCE_ROTATION_MINUTES = 60
 
 STREAMING_PRESENCES = [
     (discord.ActivityType.listening, "lofi beats"),
     (discord.ActivityType.watching, "the waves flow"),
-    (discord.ActivityType.playing, "chill vibes 24/7"),
+    (discord.ActivityType.playing,   "chill vibes 24/7"),
 ]
 
 STOPPED_PRESENCE = (discord.ActivityType.playing, "radio silence...")
@@ -106,7 +110,7 @@ YTDL_OPTIONS = {
     "no_warnings": True,
     "default_search": "auto",
     "source_address": "0.0.0.0",
-    "cookiesfrombrowser": ("firefox",),
+    # "cookiesfrombrowser": ("firefox",),  # uncomment if YouTube blocks without cookies
 }
 
 FFMPEG_OPTIONS = {
@@ -122,8 +126,8 @@ FFMPEG_OPTIONS = {
 #  BOT SETUP
 # ─────────────────────────────────────────
 intents = discord.Intents.default()
-intents.voice_states = True
-intents.guilds = True
+intents.voice_states  = True
+intents.guilds        = True
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!wave ", intents=intents, help_command=None)
@@ -148,17 +152,20 @@ class SilenceDetector(discord.PCMVolumeTransformer):
 # ─────────────────────────────────────────
 class BotState:
     def __init__(self):
-        self.current_stream_index = 0
+        self.current_stream_index  = 0
         self.voice_client: discord.VoiceClient | None = None
         self.now_playing_message: discord.Message | None = None
-        self.start_time: datetime.datetime | None = None
+        self.bot_start_time: datetime.datetime | None = None   # when bot came online
+        self.stream_start_time: datetime.datetime | None = None  # when current stream started
         self.stream_url: str | None = None
-        self.retries = 0
+        self.retries    = 0
         self.MAX_RETRIES = 5
-        self.stopped = False
+        self.stopped    = False
+        self.stopped_by: str | None = None          # who stopped it
+        self.stop_resume_time: datetime.datetime | None = None  # when it will auto resume
         self.stop_task: asyncio.Task | None = None
         self.audio_source: SilenceDetector | None = None
-        self.connecting = False  # guard against double connect
+        self.connecting = False
 
 state = BotState()
 
@@ -184,39 +191,55 @@ def next_stream_index() -> int:
 
 def make_now_playing_embed() -> discord.Embed:
     info = current_stream_info()
+    now  = datetime.datetime.now(datetime.timezone.utc)
 
-    if state.stopped:
-        embed = discord.Embed(
-            title="😔 Ripple is taking a break...",
-            description="*The bot is eagerly and willingly waiting to come back!*",
-            color=0x6b7280,
-        )
-        embed.set_footer(text="chill beats, big goals 🎧")
-        embed.timestamp = datetime.datetime.utcnow()
-        return embed
-
-    uptime = ""
-    if state.start_time:
-        delta = datetime.datetime.utcnow() - state.start_time
+    # ── Bot uptime ──────────────────────────────────
+    bot_uptime = ""
+    if state.bot_start_time:
+        delta = now - state.bot_start_time
         h, rem = divmod(int(delta.total_seconds()), 3600)
         m, s   = divmod(rem, 60)
-        uptime = f"{h:02d}:{m:02d}:{s:02d}"
+        bot_uptime = f"{h:02d}:{m:02d}:{s:02d}"
 
+    # ── STOPPED embed ───────────────────────────────
+    if state.stopped:
+        remaining_str = "calculating..."
+        if state.stop_resume_time:
+            remaining = state.stop_resume_time - now
+            total_secs = max(0, int(remaining.total_seconds()))
+            rm, rs = divmod(total_secs, 60)
+            remaining_str = f"{rm}m {rs:02d}s"
+
+        embed = discord.Embed(
+            title="😔 Ripple is taking a break...",
+            description=(
+                f"Stopped by **{state.stopped_by or 'someone'}**\n"
+                f"⏱ **{remaining_str}** remaining"
+            ),
+            color=0x6b7280,
+        )
+        embed.add_field(name="🤖 Bot Uptime", value=bot_uptime if bot_uptime else "N/A", inline=True)
+        embed.set_footer(text="chill beats, big goals 🎧")
+        embed.timestamp = now
+        return embed
+
+    # ── PLAYING embed ───────────────────────────────
     embed = discord.Embed(
         title="🎵  Now Streaming",
         description=f"**{info['title']}**\n*by {info['artist']}*",
         color=0x8b5cf6,
     )
     embed.set_thumbnail(url=info["thumbnail"])
-    embed.add_field(name="⏱  Session Uptime", value=uptime if uptime else "just started", inline=True)
-    embed.add_field(name="📻  Stream", value=f"{state.current_stream_index + 1} of {len(LOFI_STREAMS)}", inline=True)
+    embed.add_field(name="🤖 Bot Uptime",   value=bot_uptime if bot_uptime else "just started", inline=True)
+    embed.add_field(name="📻  Stream",      value=f"{state.current_stream_index + 1} of {len(LOFI_STREAMS)}", inline=True)
     embed.add_field(name="🔁  Rotates every", value=f"{STREAM_ROTATION_HOURS}h", inline=True)
     embed.set_footer(text="chill beats, big goals 🎧")
-    embed.timestamp = datetime.datetime.utcnow()
+    embed.timestamp = now
     return embed
 
 
 async def update_now_playing_embed():
+    """Always edit the existing message. Send a new one only if it doesn't exist."""
     channel = bot.get_channel(NOW_PLAYING_CHANNEL_ID)
     if channel is None:
         return
@@ -227,29 +250,39 @@ async def update_now_playing_embed():
             return
         except discord.NotFound:
             state.now_playing_message = None
-    if state.now_playing_message:
-        try:
-            await state.now_playing_message.delete()
-        except discord.NotFound:
-            pass
+        except Exception:
+            return  # silently skip on other errors
+    # Only send new message if we genuinely don't have one (e.g. bot restart)
     state.now_playing_message = await channel.send(embed=embed)
 
 
-async def post_new_now_playing():
-    channel = bot.get_channel(NOW_PLAYING_CHANNEL_ID)
-    if channel is None:
-        return
-    if state.now_playing_message:
-        try:
-            await state.now_playing_message.delete()
-        except discord.NotFound:
-            pass
-    embed = make_now_playing_embed()
-    state.now_playing_message = await channel.send(embed=embed)
+async def play_source_on_existing_connection(stream_url: str):
+    """
+    Swap the audio source without disconnecting from VC.
+    Returns True on success, False on failure.
+    """
+    vc = state.voice_client
+    if vc is None or not vc.is_connected():
+        return False
+
+    if vc.is_playing():
+        vc.stop()
+        await asyncio.sleep(0.5)
+
+    raw_source = discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTIONS)
+    source = SilenceDetector(raw_source, volume=0.5)
+    state.audio_source = source
+
+    def after_play(error):
+        if error:
+            print(f"[Ripple] Playback error: {error}")
+            asyncio.run_coroutine_threadsafe(handle_stream_error(), bot.loop)
+
+    vc.play(source, after=after_play)
+    return True
 
 
 async def start_stream(stream_index: int | None = None, new_message: bool = False):
-    # Guard against simultaneous calls
     if state.connecting:
         print("[Ripple] Already connecting, skipping...")
         return
@@ -274,7 +307,24 @@ async def start_stream(stream_index: int | None = None, new_message: bool = Fals
             print(f"[Ripple] ERROR: voice channel {VOICE_CHANNEL_ID} not found!")
             return
 
-        # Clean disconnect before reconnecting
+        state.stream_start_time = datetime.datetime.now(datetime.timezone.utc)
+        state.retries  = 0
+        state.stopped  = False
+
+        # Try to reuse existing connection first (no disconnect/reconnect)
+        if state.voice_client and state.voice_client.is_connected():
+            success = await play_source_on_existing_connection(state.stream_url)
+            if success:
+                print(f"[Ripple] ▶ Now Streaming: {info['title']} by {info['artist']} (Stream {state.current_stream_index + 1}/{len(LOFI_STREAMS)})")
+                activity_type, name = STREAMING_PRESENCES[presence_index % len(STREAMING_PRESENCES)]
+                await bot.change_presence(
+                    status=discord.Status.idle,
+                    activity=discord.Activity(type=activity_type, name=name)
+                )
+                await update_now_playing_embed()
+                return
+
+        # Not connected — do a fresh connect
         if state.voice_client:
             try:
                 await state.voice_client.disconnect(force=True)
@@ -290,35 +340,16 @@ async def start_stream(stream_index: int | None = None, new_message: bool = Fals
             await handle_stream_error()
             return
 
-        if state.voice_client.is_playing():
-            state.voice_client.stop()
+        await play_source_on_existing_connection(state.stream_url)
 
-        raw_source = discord.FFmpegPCMAudio(state.stream_url, **FFMPEG_OPTIONS)
-        source = SilenceDetector(raw_source, volume=0.5)
-        state.audio_source = source
-
-        state.start_time = datetime.datetime.utcnow()
-        state.retries = 0
-        state.stopped = False
+        print(f"[Ripple] ▶ Now Streaming: {info['title']} by {info['artist']} (Stream {state.current_stream_index + 1}/{len(LOFI_STREAMS)})")
 
         activity_type, name = STREAMING_PRESENCES[presence_index % len(STREAMING_PRESENCES)]
         await bot.change_presence(
             status=discord.Status.idle,
             activity=discord.Activity(type=activity_type, name=name)
         )
-
-        def after_play(error):
-            if error:
-                print(f"[Ripple] Playback error: {error}")
-                asyncio.run_coroutine_threadsafe(handle_stream_error(), bot.loop)
-
-        state.voice_client.play(source, after=after_play)
-        print(f"[Ripple] ▶ Now Streaming: {info['title']} by {info['artist']} (Stream {state.current_stream_index + 1}/{len(LOFI_STREAMS)})")
-
-        if new_message:
-            await post_new_now_playing()
-        else:
-            await update_now_playing_embed()
+        await update_now_playing_embed()
 
     finally:
         state.connecting = False
@@ -343,7 +374,9 @@ async def auto_resume(minutes: int):
     await asyncio.sleep(minutes * 60)
     if state.stopped:
         print(f"[Ripple] Auto resuming after {minutes} min break")
-        await start_stream(new_message=True)
+        state.stopped_by        = None
+        state.stop_resume_time  = None
+        await start_stream()
 
 
 # ─────────────────────────────────────────
@@ -352,7 +385,7 @@ async def auto_resume(minutes: int):
 @tasks.loop(minutes=1)
 async def watchdog():
     if state.stopped:
-        await update_now_playing_embed()
+        await update_now_playing_embed()   # keeps countdown fresh every minute
         return
 
     if state.connecting:
@@ -365,11 +398,11 @@ async def watchdog():
             await start_stream()
             return
 
-    if state.start_time:
-        elapsed = datetime.datetime.utcnow() - state.start_time
+    if state.stream_start_time:
+        elapsed = datetime.datetime.now(datetime.timezone.utc) - state.stream_start_time
         if elapsed >= datetime.timedelta(hours=STREAM_ROTATION_HOURS):
             print(f"[Ripple] Rotating stream after {STREAM_ROTATION_HOURS}h")
-            await start_stream(next_stream_index(), new_message=True)
+            await start_stream(next_stream_index())
             return
 
     if state.voice_client is None or not state.voice_client.is_connected():
@@ -388,7 +421,7 @@ async def watchdog():
 @watchdog.before_loop
 async def before_watchdog():
     await bot.wait_until_ready()
-    await asyncio.sleep(15)  # wait for on_ready to finish connecting first
+    await asyncio.sleep(15)
 
 
 # ─────────────────────────────────────────
@@ -396,7 +429,7 @@ async def before_watchdog():
 # ─────────────────────────────────────────
 @bot.check
 async def only_in_text_channel(ctx):
-    return ctx.channel.id == TEXT_CHANNEL_ID
+    return ctx.channel.id in TEXT_CHANNEL_IDS
 
 
 # ─────────────────────────────────────────
@@ -422,8 +455,12 @@ class StopModal(discord.ui.Modal, title="⏸️ Stop Ripple"):
             )
             return
 
-        state.stopped = True
-        state.audio_source = None
+        now = datetime.datetime.now(datetime.timezone.utc)
+        state.stopped          = True
+        state.stopped_by       = f"{interaction.user.display_name}"
+        state.stop_resume_time = now + datetime.timedelta(minutes=minutes)
+        state.audio_source     = None
+
         await bot.change_presence(
             status=discord.Status.idle,
             activity=discord.Activity(type=STOPPED_PRESENCE[0], name=STOPPED_PRESENCE[1])
@@ -443,9 +480,8 @@ class StopModal(discord.ui.Modal, title="⏸️ Stop Ripple"):
         await update_now_playing_embed()
 
         await interaction.response.send_message(
-            f"😔 Ripple is taking a **{minutes} minute** break...\n"
-            f"*The bot is eagerly and willingly waiting to come back!*\n"
-            f"Use `!wave resume` if you change your mind!",
+            f"😔 Ripple is taking a **{minutes} minute** break!\n"
+            f"Use `!wave resume` if you change your mind.",
             delete_after=10,
         )
 
@@ -460,7 +496,7 @@ async def stop(ctx):
         await ctx.send("⏸️ Ripple is already on a break! Use `!wave resume` to bring it back.", delete_after=8)
         return
     view = StopButtonView()
-    await ctx.send("⏸️ How long should Ripple take a break?", view=view, delete_after=30)
+    await ctx.send("⏸️ How long should Ripple take a break?", view=view, delete_after=10)
 
 
 class StopButtonView(discord.ui.View):
@@ -482,9 +518,12 @@ async def resume(ctx):
     if state.stop_task and not state.stop_task.done():
         state.stop_task.cancel()
 
+    state.stopped_by       = None
+    state.stop_resume_time = None
+
     print(f"[Ripple] ▶️ Resumed by {ctx.author.name} ({ctx.author.id})")
     await ctx.send("🎵 Ripple is back! *The bot missed you* 🌊", delete_after=8)
-    await start_stream(new_message=True)
+    await start_stream()
 
 
 @bot.command(name="skip")
@@ -494,7 +533,7 @@ async def skip(ctx):
     next_index = next_stream_index()
     print(f"[Ripple] ⏭️ Skipped by {ctx.author.name} ({ctx.author.id})")
     await ctx.send("⏭️ Skipping to next stream...", delete_after=5)
-    await start_stream(next_index, new_message=True)
+    await start_stream(next_index)
 
 
 @bot.command(name="status")
@@ -502,14 +541,16 @@ async def skip(ctx):
 async def status(ctx):
     await ctx.message.delete()
     vc = state.voice_client
-    uptime = ""
-    if state.start_time:
-        delta = datetime.datetime.utcnow() - state.start_time
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    bot_uptime = ""
+    if state.bot_start_time:
+        delta = now - state.bot_start_time
         h, rem = divmod(int(delta.total_seconds()), 3600)
         m, s   = divmod(rem, 60)
-        uptime = f"{h:02d}:{m:02d}:{s:02d}"
+        bot_uptime = f"{h:02d}:{m:02d}:{s:02d}"
 
-    playing = "✅ Streaming" if (vc and vc.is_playing()) else ("⏸️ Stopped" if state.stopped else "❌ Not playing")
+    playing   = "✅ Streaming" if (vc and vc.is_playing()) else ("⏸️ Stopped" if state.stopped else "❌ Not playing")
     connected = "✅ Connected" if (vc and vc.is_connected()) else "❌ Disconnected"
 
     last_audio = ""
@@ -518,14 +559,14 @@ async def status(ctx):
         last_audio = f"{secs}s ago"
 
     embed = discord.Embed(title="🤖 Ripple Status", color=0x10b981)
-    embed.add_field(name="Playback", value=playing, inline=True)
-    embed.add_field(name="Voice", value=connected, inline=True)
-    embed.add_field(name="Uptime", value=uptime if uptime else "N/A", inline=True)
-    embed.add_field(name="Retries", value=str(state.retries), inline=True)
-    embed.add_field(name="Last Audio", value=last_audio if last_audio else "N/A", inline=True)
+    embed.add_field(name="Playback",      value=playing,    inline=True)
+    embed.add_field(name="Voice",         value=connected,  inline=True)
+    embed.add_field(name="Bot Uptime",    value=bot_uptime if bot_uptime else "N/A", inline=True)
+    embed.add_field(name="Retries",       value=str(state.retries), inline=True)
+    embed.add_field(name="Last Audio",    value=last_audio if last_audio else "N/A", inline=True)
     embed.add_field(name="Current Stream", value=current_stream_info()["title"], inline=False)
     embed.set_footer(text="chill beats, big goals 🎧")
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, delete_after=15)
 
 
 @status.error
@@ -555,7 +596,7 @@ async def help_command(ctx):
         inline=False,
     )
     embed.set_footer(text="chill beats, big goals 🎧")
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, delete_after=10)
 
 
 presence_index = 0
@@ -585,17 +626,18 @@ async def before_presence_rotator():
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure):
         await ctx.message.delete()
-        await ctx.send("❌ Ripple commands only work in the Silent Study Room chat!", delete_after=5)
+        await ctx.send("❌ Ripple commands only work in the allowed channels!", delete_after=5)
 
 
 @bot.event
 async def on_ready():
     print(f"[Ripple] Logged in as {bot.user} ({bot.user.id})")
+    state.bot_start_time = datetime.datetime.now(datetime.timezone.utc)
     activity = discord.Activity(type=discord.ActivityType.listening, name="lofi beats")
     await bot.change_presence(status=discord.Status.idle, activity=activity)
     watchdog.start()
     presence_rotator.start()
-    await start_stream(new_message=True)
+    await start_stream()
 
 
 @bot.event
@@ -603,6 +645,9 @@ async def on_voice_state_update(member, before, after):
     if member.id != bot.user.id:
         return
     if before.channel and not after.channel and not state.stopped:
+        if state.connecting:
+            return
+        await asyncio.sleep(3)
         if state.connecting:
             return
         print("[Ripple] Disconnected from voice — rejoining in 5s...")
@@ -616,6 +661,8 @@ async def on_voice_state_update(member, before, after):
 if __name__ == "__main__":
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN not set in .env file!")
-    if not VOICE_CHANNEL_ID or not TEXT_CHANNEL_ID or not NOW_PLAYING_CHANNEL_ID:
+    if not VOICE_CHANNEL_ID or not NOW_PLAYING_CHANNEL_ID:
         raise ValueError("Channel IDs not set in .env file!")
+    if not TEXT_CHANNEL_IDS:
+        raise ValueError("TEXT_CHANNEL_IDS not set in .env file!")
     bot.run(BOT_TOKEN)
